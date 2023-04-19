@@ -40,7 +40,8 @@ static const uint8_t borders[] = {3,5,5,4};
 #define LOOK_INTO "WM_NAME"
 static const char *ignore_names[] = {"bar", "xclock"};
 ///--Menus and Programs---///
-static const char *menucmd[]   = { "", NULL };
+static const char *menucmd[]   = { "dmenu_run -c -fn 'JetBrains Mono-10'", NULL };
+static const char *terminal[]  = { "xst", NULL };
 ///--Custom foo---///
 static void halfandcentered(const Arg *arg)
 {
@@ -194,6 +195,7 @@ static key keys[] = {
     {  MOD |SHIFT,        XK_Left,       cursor_move,       {.i=TWOBWM_CURSOR_LEFT}},
     // Start programs
     {  MOD ,              XK_w,          start,             {.com = menucmd}},
+    {  MOD ,              XK_Return,     start,             {.com = terminal}},
     // Exit or restart 2bwm
     {  MOD |CONTROL,      XK_q,          twobwm_exit,       {.i=0}},
     {  MOD |CONTROL,      XK_r,          twobwm_restart,    {.i=0}},
