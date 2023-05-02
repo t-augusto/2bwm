@@ -19,7 +19,7 @@ static const uint8_t offsets[] = {0,0,0,0};
  *2)fixedcol         3)unkilcol
  *4)fixedunkilcol    5)outerbordercol
  *6)emptycol         */
-static const char *colors[] = {"#35586c","#333333","#7a8c5c","#ff6666","#cc9933","#0d131a","#000000"};
+static const char *colors[] = {"#B554FF","#646964","#302627","#CC9393","#C2745B","#CC9393","#000000"};
 /* if this is set to true the inner border and outer borders colors will be swapped */
 static const bool inverted_colors = true;
 ///---Cursor---///
@@ -40,7 +40,7 @@ static const uint8_t borders[] = {3,5,5,4};
 #define LOOK_INTO "WM_NAME"
 static const char *ignore_names[] = {"bar", "xclock"};
 ///--Menus and Programs---///
-static const char *menucmd[]   = { "dmenu_run", "-c", "-fn", "JetBrains Mono-10", NULL };
+static const char *menucmd[]   = { "dmenu_run", "-c", "-fn", "JetBrains Mono-9", NULL };
 static const char *vol_down[]  = { "pamixer", "-u", "-d", "3", "--allow-boost", NULL };
 static const char *terminal[]  = { "xst", NULL };
 ///--Custom foo---///
