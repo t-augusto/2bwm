@@ -40,7 +40,7 @@ static const uint8_t borders[] = {3,5,5,4};
 #define LOOK_INTO "WM_NAME"
 static const char *ignore_names[] = {"bar", "xclock"};
 ///--Menus and Programs---///
-static const char *menucmd[]   = { "dmenu_run", "-c", "-fn", "JetBrains Mono-9", NULL };
+static const char *menucmd[]   = { "rofi", "-show", "run", NULL };
 static const char *vol_down[]  = { "pamixer", "-u", "-d", "3", "--allow-boost", NULL };
 static const char *terminal[]  = { "xst", NULL };
 ///--Custom foo---///
