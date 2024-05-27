@@ -44,6 +44,7 @@ xcb_screen_t     *screen = NULL;           // Our current screen.
 int randrbase = 0;                         // Beginning of RANDR extension events.
 static uint8_t curws = 0;                  // Current workspace.
 struct client *focuswin = NULL;            // Current focus window.
+struct client *lastwin[WORKSPACES];        // Last focused window.
 static xcb_drawable_t top_win=0;           // Window always on top.
 static xcb_drawable_t dock_win=0;          // A single dock always on top.
 static struct item *winlist = NULL;        // Global list of all client windows.
@@ -66,6 +67,7 @@ static void cursor_move(const Arg *);
 static void changeworkspace(const Arg *);
 static void changeworkspace_helper(const uint32_t);
 static void focusnext(const Arg *);
+static void focuslastwin(const Arg *);
 static void focusnext_helper(bool);
 static void sendtoworkspace(const Arg *);
 static void sendtonextworkspace(const Arg *);
@@ -188,6 +190,15 @@ void
 focusnext(const Arg *arg)
 {
 	focusnext_helper(arg->i > 0);
+}
+
+void
+focuslastwin(const Arg *arg)
+{
+	if (lastwin[curws] == NULL)
+		return;
+	raisewindow(lastwin[curws]->id);
+	setfocus(lastwin[curws]);
 }
 
 void
@@ -456,6 +467,10 @@ check_name(struct client *client)
 void
 addtoworkspace(struct client *client, uint32_t ws)
 {
+	if (ws < 0 || ws > WORKSPACES) {
+		// this fixes pip mode for Chrome as it somewhat returns ws=4294967295
+		ws = curws;
+	}
 	struct item *item = additem(&wslist[ws]);
 
 	if (client == NULL)
@@ -1005,11 +1020,17 @@ setupwin(xcb_window_t win)
 	if (cookie.sequence > 0) {
 		result = xcb_icccm_get_wm_transient_for_reply(conn, cookie, &prop, NULL);
 		if (result) {
-			struct client *parent = findclient(&prop);
+			xcb_get_geometry_reply_t *parent = xcb_get_geometry_reply(conn,
+					xcb_get_geometry(conn, prop), NULL);
+
 			if (parent) {
 				client->usercoord = true;
 				client->x = parent->x+(parent->width/2.0) - (client->width/2.0);
 				client->y = parent->y+(parent->height/2.0) - (client->height/2.0);
+				moveresize(client->id, client->x, client->y,
+						client->width, client->height);
+				free(parent);
+				xcb_flush(conn);
 			}
 		}
 	}
@@ -1624,6 +1645,7 @@ setfocus(struct client *client)// Set focus on window client.
 			ewmh->_NET_ACTIVE_WINDOW, XCB_ATOM_WINDOW, 32, 1,&client->id);
 
 	/* Remember the new window as the current focused window. */
+	lastwin[curws] = focuswin;
 	focuswin = client;
 
 	grabbuttons(client);
@@ -1896,6 +1918,15 @@ setborders(struct client *client,const bool isitfocused)
 	uint32_t values[1];  /* this is the color maintainer */
 	uint16_t half = 0;
 	bool inv = conf.inverted_colors;
+
+	// something weird happened, fix client
+	if (client->width == 0 || client->height == 0) {
+		// restore from geometry
+		getgeom(&client->id, &client->x, &client->y, &client->width,
+			&client->height, &client->depth);
+		resize(client->id, client->width, client->height);
+		xcb_flush(conn);
+	}
 
 	if (client->maxed || client->ignore_borders)
 		return;
@@ -2524,14 +2555,18 @@ configwin(xcb_window_t win, uint16_t mask, const struct winconf *wc)
 
 	if (mask & XCB_CONFIG_WINDOW_WIDTH) {
 		mask |= XCB_CONFIG_WINDOW_WIDTH;
-		i++;
-		values[i] = wc->width;
+		if (wc->width != 0) {
+			i++;
+			values[i] = wc->width;
+		}
 	}
 
 	if (mask & XCB_CONFIG_WINDOW_HEIGHT) {
 		mask |= XCB_CONFIG_WINDOW_HEIGHT;
-		i++;
-		values[i] = wc->height;
+		if (wc->height != 0) {
+			i++;
+			values[i] = wc->height;
+		}
 	}
 
 	if (mask & XCB_CONFIG_WINDOW_SIBLING) {
@@ -2581,7 +2616,7 @@ configurerequest(xcb_generic_event_t *ev)
 
 		if (e->value_mask & XCB_CONFIG_WINDOW_Y)
 		 	if (!client->maxed && !client->vertmaxed)
-			client->y = e->y;
+				client->y = e->y;
 
 		/* XXX Do we really need to pass on sibling and stack mode
 		 * configuration? Do we want to? */
@@ -2871,9 +2906,11 @@ clientmessage(xcb_generic_event_t *ev)
 		xcb_map_window(conn, cl->id);
 		setfocus(cl);
 	}
-	else if (e->type == ewmh->_NET_CURRENT_DESKTOP)
-		changeworkspace_helper(e->data.data32[0]);
-	else if (e->type == ewmh->_NET_WM_STATE && e->format == 32) {
+	else if (e->type == ewmh->_NET_CURRENT_DESKTOP) {
+		if (e->data.data32[0] > 0 && e->data.data32[0] < WORKSPACES) {
+			changeworkspace_helper(e->data.data32[0]);
+		}
+	} else if (e->type == ewmh->_NET_WM_STATE && e->format == 32) {
 		cl = findclient(&e->window);
 		if (NULL == cl)
 			return;
@@ -2909,10 +2946,17 @@ clientmessage(xcb_generic_event_t *ev)
 		 *
 		 * e->data.data32[0] new workspace
 		 */
-		delfromworkspace(cl);
-		addtoworkspace(cl, e->data.data32[0]);
-		xcb_unmap_window(conn, cl->id);
-		xcb_flush(conn);
+		uint32_t new_ws = e->data.data32[0];
+		if (new_ws >= 0 && new_ws < WORKSPACES) {
+			delfromworkspace(cl);
+			addtoworkspace(cl, e->data.data32[0]);
+			xcb_unmap_window(conn, cl->id);
+			xcb_flush(conn);
+		} else {
+			// specific case, treat it as new window
+			xcb_map_window(conn, cl->id);
+			raisewindow(cl->id);
+		}
 	}
 }
 
@@ -2924,6 +2968,9 @@ destroynotify(xcb_generic_event_t *ev)
 	xcb_destroy_notify_event_t *e = (xcb_destroy_notify_event_t *) ev;
 	if (NULL != focuswin && focuswin->id == e->window)
 		focuswin = NULL;
+
+	if (NULL != lastwin[curws] && lastwin[curws]->id == e->window)
+		lastwin[curws] = NULL;
 
 	cl = findclient( & e->window);
 
@@ -3029,10 +3076,15 @@ unmapnotify(xcb_generic_event_t *ev)
 		return;
 	if (focuswin!=NULL && client->id == focuswin->id)
 		focuswin = NULL;
+	if (lastwin[curws]!=NULL && client->id == lastwin[curws]->id)
+		lastwin[curws] = NULL;
+
 	if (client->iconic == false)
 		forgetclient(client);
 
 	updateclientlist();
+	if (focuswin == NULL) // try to focus another window
+		focusnext_helper(true);
 }
 
 void
